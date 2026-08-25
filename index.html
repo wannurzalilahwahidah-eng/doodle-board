@@ -1,1 +1,358 @@
-index.html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Magic Doodle Board</title>
+
+<style>
+*{box-sizing:border-box}
+
+html,body{
+  margin:0;
+  width:100%;
+  height:100%;
+  overflow:hidden;
+  background:#fff;
+  font-family:Arial,Helvetica,sans-serif;
+  touch-action:none;
+}
+
+.app{
+  width:100%;
+  height:100%;
+  position:relative;
+  background:#fff;
+}
+
+#board{
+  display:block;
+  width:100%;
+  height:100%;
+  background:#fff;
+  touch-action:none;
+  cursor:crosshair;
+}
+
+.toolbar{
+  position:fixed;
+  left:50%;
+  bottom:18px;
+  transform:translateX(-50%);
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:10px 12px;
+  border-radius:18px;
+  background:rgba(255,255,255,.92);
+  box-shadow:0 6px 24px rgba(0,0,0,.14);
+  z-index:10;
+}
+
+button{
+  border:0;
+  border-radius:12px;
+  padding:10px 14px;
+  background:#111;
+  color:white;
+  font-size:15px;
+}
+
+.secondary{
+  background:#eee;
+  color:#111;
+}
+
+.control{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-size:13px;
+}
+
+input[type=color]{
+  width:38px;
+  height:38px;
+  border:none;
+}
+
+input[type=range]{
+  width:110px;
+}
+
+.hint{
+  position:fixed;
+  top:16px;
+  left:50%;
+  transform:translateX(-50%);
+  padding:8px 12px;
+  border-radius:999px;
+  background:rgba(0,0,0,.06);
+  color:#555;
+  font-size:13px;
+  pointer-events:none;
+}
+
+@media(max-width:600px){
+  .toolbar{bottom:10px;gap:6px;padding:8px}
+  .control span{display:none}
+  input[type=range]{width:80px}
+}
+</style>
+</head>
+
+<body>
+
+<div class="app">
+
+<canvas id="board"></canvas>
+
+<div class="hint">
+Draw anything — it disappears after 5 seconds ✨
+</div>
+
+<div class="toolbar">
+
+<div class="control">
+<span>Color</span>
+<input id="color" type="color" value="#111111">
+</div>
+
+<div class="control">
+<span>Size</span>
+<input id="size" type="range" min="2" max="30" value="7">
+</div>
+
+<button id="undo" class="secondary">Undo</button>
+<button id="clear">Clear</button>
+
+</div>
+</div>
+
+<script>
+
+const canvas=document.getElementById("board");
+const ctx=canvas.getContext("2d");
+
+const colorInput=document.getElementById("color");
+const sizeInput=document.getElementById("size");
+
+const LIFETIME=5000;
+const FADE_TIME=1200;
+
+let strokes=[];
+let currentStroke=null;
+let drawing=false;
+let animation=null;
+
+function resizeCanvas(){
+
+const dpr=window.devicePixelRatio||1;
+
+const rect=canvas.getBoundingClientRect();
+
+canvas.width=rect.width*dpr;
+canvas.height=rect.height*dpr;
+
+ctx.setTransform(dpr,0,0,dpr,0,0);
+
+}
+
+window.addEventListener("resize",resizeCanvas);
+
+resizeCanvas();
+
+
+function getPosition(e){
+
+const rect=canvas.getBoundingClientRect();
+
+return{
+x:e.clientX-rect.left,
+y:e.clientY-rect.top
+};
+
+}
+
+
+canvas.addEventListener("pointerdown",e=>{
+
+e.preventDefault();
+
+drawing=true;
+
+canvas.setPointerCapture(e.pointerId);
+
+currentStroke={
+points:[getPosition(e)],
+color:colorInput.value,
+width:Number(sizeInput.value),
+created:performance.now()
+};
+
+strokes.push(currentStroke);
+
+startAnimation();
+
+});
+
+
+canvas.addEventListener("pointermove",e=>{
+
+if(!drawing)return;
+
+currentStroke.points.push(getPosition(e));
+
+});
+
+
+canvas.addEventListener("pointerup",()=>{
+
+drawing=false;
+currentStroke=null;
+
+});
+
+
+function drawStroke(stroke,alpha){
+
+const pts=stroke.points;
+
+if(!pts.length)return;
+
+ctx.save();
+
+ctx.globalAlpha=alpha;
+
+ctx.strokeStyle=stroke.color;
+ctx.fillStyle=stroke.color;
+
+ctx.lineWidth=stroke.width;
+
+ctx.lineCap="round";
+ctx.lineJoin="round";
+
+if(pts.length===1){
+
+ctx.beginPath();
+
+ctx.arc(
+pts[0].x,
+pts[0].y,
+stroke.width/2,
+0,
+Math.PI*2
+);
+
+ctx.fill();
+
+}else{
+
+ctx.beginPath();
+
+ctx.moveTo(
+pts[0].x,
+pts[0].y
+);
+
+for(let i=1;i<pts.length;i++){
+
+ctx.lineTo(
+pts[i].x,
+pts[i].y
+);
+
+}
+
+ctx.stroke();
+
+}
+
+ctx.restore();
+
+}
+
+
+function render(){
+
+ctx.clearRect(
+0,
+0,
+canvas.clientWidth,
+canvas.clientHeight
+);
+
+const now=performance.now();
+
+strokes=strokes.filter(
+s=>now-s.created<LIFETIME
+);
+
+for(const stroke of strokes){
+
+const age=now-stroke.created;
+
+let alpha=1;
+
+if(age>LIFETIME-FADE_TIME){
+
+alpha=
+(LIFETIME-age)
+/FADE_TIME;
+
+}
+
+drawStroke(stroke,alpha);
+
+}
+
+if(strokes.length){
+
+animation=requestAnimationFrame(render);
+
+}else{
+
+animation=null;
+
+}
+
+}
+
+
+function startAnimation(){
+
+if(!animation){
+
+animation=requestAnimationFrame(render);
+
+}
+
+}
+
+
+document.getElementById("clear")
+.addEventListener("click",()=>{
+
+strokes=[];
+
+ctx.clearRect(
+0,
+0,
+canvas.clientWidth,
+canvas.clientHeight
+);
+
+});
+
+
+document.getElementById("undo")
+.addEventListener("click",()=>{
+
+strokes.pop();
+
+});
+
+</script>
+
+</body>
+</html>
